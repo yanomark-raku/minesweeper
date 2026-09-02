@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Minesweeper</title>
+    <style>
+        :root {
+            /* モダンでクリーンなカラーパレット */
+            --bg-color: #f1f5f9;
+            --panel-bg: #ffffff;
+            --header-bg: #f8fafc;
+            --border-color: #cbd5e1;
+            --cell-bg: #e2e8f0;
+            --cell-hover: #cbd5e1;
+            --cell-open-bg: #ffffff;
+            --text-color: #334155;
+            --counter-bg: #0f172a;
+            --counter-text: #ef4444;
+            --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent; /* スマホタップ時の青いハイライトを消す */
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            touch-action: manipulation; /* ダブルタップによるズームを防止 */
+        }
+
+        .game-container {
+            background: var(--panel-bg);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            user-select: none;
+            max-width: 100%;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--header-bg);
+            padding: 12px 20px;
+            border-radius: 12px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .counter {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 28px;
+            font-weight: bold;
+            background: var(--counter-bg);
+            color: var(--counter-text);
+            padding: 6px 12px;
+            border-radius: 8px;
+            min-width: 70px;
+            text-align: center;
+            letter-spacing: 2px;
+            box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+            line-height: 1;
+        }
+
+        .face-btn {
+            font-size: 32px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            padding: 8px;
+            border-radius: 50%;
+            transition: transform 0.1s, background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .face-btn:active {
+            transform: scale(0.9);
+            background-color: #f1f5f9;
+        }
+
+        .grid {
+            display: grid;
+            /* 9列の設定 */
+            grid-template-columns: repeat(9, 40px);
+            grid-template-rows: repeat(9, 40px);
+            gap: 2px;
+            background: var(--border-color);
+            padding: 2px;
+            border-radius: 8px;
+            margin: 0 auto;
+        }
+
+        .cell {
+            background: var(--cell-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            /* 少し立体感を持たせるクリーンなスタイル */
+            box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.8), inset -1px -1px 0px rgba(0, 0, 0, 0.1);
+            transition: background-color 0.1s;
+        }
+
+        /* PCでのホバー効果 */
+        @media (hover: hover) {
+            .cell:hover:not(.open) {
+                background: var(--cell-hover);
+            }
+        }
+
+        .cell:active:not(.open) {
+            box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.2);
+            background: var(--cell-hover);
+        }
+
+        .cell.open {
+            background: var(--cell-open-bg);
+            cursor: default;
+            box-shadow: none;
+        }
+
+        .cell.mine-hit {
+            background-color: #fca5a5 !important; /* 爆発した地雷マス */
+        }
+
+        /* 数字のカラー定義（モダンなトーン） */
+        .text-1 { color: #3b82f6; } /* Blue */
+        .text-2 { color: #10b981; } /* Green */
+        .text-3 { color: #ef4444; } /* Red */
+        .text-4 { color: #8b5cf6; } /* Purple */
+        .text-5 { color: #f59e0b; } /* Orange */
+        .text-6 { color: #06b6d4; } /* Cyan */
+        .text-7 { color: #3f3f46; } /* Dark Gray */
+        .text-8 { color: #71717a; } /* Gray */
+
+        /* スマホ向けの微調整 */
+        @media (max-width: 450px) {
+            .grid {
+                grid-template-columns: repeat(9, 36px);
+                grid-template-rows: repeat(9, 36px);
+            }
+            .cell {
+                font-size: 18px;
+            }
+            .game-container {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <div class="header">
+            <div class="counter" id="mines-count">010</div>
+            <button class="face-btn" id="reset-btn" aria-label="リセット">😀</button>
+            <div class="counter" id="timer">000</div>
+        </div>
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <script>
+        // 設定
+        const ROWS = 9;
+        const COLS = 9;
+        const TOTAL_MINES = 10;
+
+        // 状態変数
+        let board = [];
+        let gameState = 'idle'; // 'idle', 'playing', 'won', 'lost'
+        let flags = 0;
+        let time = 0;
+        let timerInterval = null;
+
+        // DOM要素
+        const gridEl = document.getElementById('grid');
+        const minesCountEl = document.getElementById('mines-count');
+        const timerEl = document.getElementById('timer');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // 右クリックメニューの無効化（長押し時のメニューも防ぐ）
+        document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+
+        // 初期化関数
+        function init() {
+            board = [];
+            gameState = 'idle';
+            flags = 0;
+            time = 0;
+            updateMinesCount();
+            updateTimerDisplay();
+            
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            resetBtn.textContent = '😀';
+            gridEl.innerHTML = '';
+
+            // 盤面の生成
+            for (let r = 0; r < ROWS; r++) {
+                let row = [];
+                for (let c = 0; c < COLS; c++) {
+                    const cellEl = document.createElement('div');
+                    cellEl.classList.add('cell');
+                    
+                    // セルごとのオブジェクト
+                    const cellObj = {
+                        r, c,
+                        isMine: false,
+                        isOpen: false,
+                        isFlagged: false,
+                        neighborMines: 0,
+                        element: cellEl
+                    };
+                    
+                    // イベントリスナーの登録
+                    setupCellEvents(cellEl, cellObj);
+
+                    gridEl.appendChild(cellEl);
+                    row.push(cellObj);
+                }
+                board.push(row);
+            }
+        }
+
+        // セルのイベント設定
+        function setupCellEvents(cellEl, cellObj) {
+            const { r, c } = cellObj;
+            let touchTimer = null;
+            let isLongPress = false;
+
+            // PCのクリック (左)
+            cellEl.addEventListener('click', (e) => {
+                if (isLongPress) return; // 長押し発動時はクリックを開かない
+                handleCellOpen(r, c);
+            });
+
+            // PCの右クリック (フラグ)
+            cellEl.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                handleFlagToggle(r, c);
+            });
+
+            // スマホの長押し対応
+            cellEl.addEventListener('touchstart', (e) => {
+                if (gameState === 'won' || gameState === 'lost' || cellObj.isOpen) return;
+                isLongPress = false;
+                
+                // 400ms長押しでフラグを立てる
+                touchTimer = setTimeout(() => {
+                    isLongPress = true;
+                    handleFlagToggle(r, c);
+                    // 端末がバイブレーションをサポートしていれば少し振動させる
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }, 400);
+            }, { passive: true });
+
+            cellEl.addEventListener('touchend', (e) => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+                if (isLongPress) {
+                    // 長押しとして処理された場合、直後のclickイベントをキャンセル
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            cellEl.addEventListener('touchmove', () => {
+                // スワイプ等の移動が入ったら長押しキャンセル
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+            }, { passive: true });
+        }
+
+        // 顔アイコンの表情変更イベント（クリック中）
+        function setFaceEvent(eventType, face) {
+            gridEl.addEventListener(eventType, (e) => {
+                if (gameState === 'idle' || gameState === 'playing') {
+                    // 左クリックまたはタッチ時のみ表情を変える
+                    if (e.type === 'mousedown' && e.button !== 0) return;
+                    resetBtn.textContent = face;
+                }
+            }, { passive: true });
+        }
+        setFaceEvent('mousedown', '😮');
+        setFaceEvent('touchstart', '😮');
+        setFaceEvent('mouseup', '😀');
+        setFaceEvent('touchend', '😀');
+        setFaceEvent('mouseleave', '😀');
+
+        // タイマー開始
+        function startTimer() {
+            if (timerInterval) return;
+            timerInterval = setInterval(() => {
+                if (time < 999) time++;
+                updateTimerDisplay();
+            }, 1000);
+        }
+
+        // 表示の更新
+        function updateTimerDisplay() {
+            timerEl.textContent = time.toString().padStart(3, '0');
+        }
+
+        function updateMinesCount() {
+            const left = TOTAL_MINES - flags;
+            const sign = left < 0 ? '-' : '';
+            const numStr = Math.abs(left).toString().padStart(left < 0 ? 2 : 3, '0');
+            minesCountEl.textContent = sign + numStr;
+        }
+
+        // 初回クリック時に地雷を配置
+        function placeMines(firstRow, firstCol) {
+            let minesPlaced = 0;
+            while (minesPlaced < TOTAL_MINES) {
+                const r = Math.floor(Math.random() * ROWS);
+                const c = Math.floor(Math.random() * COLS);
+                
+                // 初回にクリックした場所には地雷を置かない
+                if (r === firstRow && c === firstCol) continue;
+                
+                if (!board[r][c].isMine) {
+                    board[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+            
+            // 各セルの周囲の地雷数を計算
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (!board[r][c].isMine) {
+                        board[r][c].neighborMines = countNeighborMines(r, c);
+                    }
+                }
+            }
+        }
+
+        function countNeighborMines(r, c) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const nr = r + i;
+                    const nc = c + j;
+                    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                        if (board[nr][nc].isMine) count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        // セルを開く処理の入り口
+        function handleCellOpen(r, c) {
+            if (gameState === 'won' || gameState === 'lost') return;
+            const cell = board[r][c];
+            if (cell.isOpen || cell.isFlagged) return;
+
+            if (gameState === 'idle') {
+                gameState = 'playing';
+                placeMines(r, c);
+                startTimer();
+            }
+
+            openCell(r, c, true);
+            checkWin();
+        }
+
+        // フラグの切り替え処理
+        function handleFlagToggle(r, c) {
+            if (gameState === 'won' || gameState === 'lost') return;
+            const cell = board[r][c];
+            if (cell.isOpen) return;
+
+            cell.isFlagged = !cell.isFlagged;
+            cell.element.textContent = cell.isFlagged ? '🚩' : '';
+            
+            if (cell.isFlagged) {
+                flags++;
+            } else {
+                flags--;
+            }
+            updateMinesCount();
+        }
+
+        // セルを実際に開く再帰関数
+        function openCell(r, c, isUserClick = false) {
+            const cell = board[r][c];
+            if (cell.isOpen || cell.isFlagged) return;
+            
+            cell.isOpen = true;
+            cell.element.classList.add('open');
+
+            // 地雷を踏んだ場合
+            if (cell.isMine) {
+                if (isUserClick) {
+                    cell.element.classList.add('mine-hit');
+                }
+                cell.element.textContent = '💣';
+                if (isUserClick) {
+                    gameOver();
+                }
+                return;
+            }
+
+            // 安全なマスの場合
+            if (cell.neighborMines > 0) {
+                cell.element.textContent = cell.neighborMines;
+                cell.element.classList.add(`text-${cell.neighborMines}`);
+            } else {
+                // 周囲に地雷がない(0)の場合は、周囲8マスを連鎖的に開く
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const nr = r + i;
+                        const nc = c + j;
+                        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                            if (!(i === 0 && j === 0)) {
+                                openCell(nr, nc);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ゲームオーバー処理
+        function gameOver() {
+            gameState = 'lost';
+            clearInterval(timerInterval);
+            resetBtn.textContent = '😵';
+            
+            // 全ての地雷を表示し、間違ったフラグを×で示す
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = board[r][c];
+                    if (cell.isMine && !cell.isFlagged) {
+                        cell.isOpen = true;
+                        cell.element.classList.add('open');
+                        cell.element.textContent = '💣';
+                    } else if (!cell.isMine && cell.isFlagged) {
+                        cell.element.textContent = '❌';
+                    }
+                }
+            }
+        }
+
+        // クリア判定
+        function checkWin() {
+            if (gameState !== 'playing') return;
+            let openedCount = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c].isOpen) openedCount++;
+                }
+            }
+            
+            // 地雷以外のマスを全て開けたらクリア
+            if (openedCount === (ROWS * COLS) - TOTAL_MINES) {
+                gameState = 'won';
+                clearInterval(timerInterval);
+                resetBtn.textContent = '😎';
+                
+                // 残りの地雷に自動的にフラグを立てる
+                flags = TOTAL_MINES;
+                updateMinesCount();
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const cell = board[r][c];
+                        if (cell.isMine && !cell.isFlagged) {
+                            cell.isFlagged = true;
+                            cell.element.textContent = '🚩';
+                        }
+                    }
+                }
+            }
+        }
+
+        // リセットボタンのイベント
+        resetBtn.addEventListener('click', init);
+
+        // ゲームの初期実行
+        init();
+
+    </script>
+</body>
+</html>
